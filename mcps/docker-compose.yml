@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  firecrawl-mcp:
+    build: ./firecrawl
+    environment:
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - SSE_LOCAL=${FIRECRAWL_SSE_LOCAL}
+    restart: always
+
+  # proxy:
+  #   build: ./reverse-proxy
+  #   depends_on:
+  #     - mcp-fs
+  #     - mcp-git
+  #   ports:
+  #     - "8080:8080"       # 映射到 dind 容器的 8080（外层再映射到宿主机）
+  #   restart: unless-stopped
