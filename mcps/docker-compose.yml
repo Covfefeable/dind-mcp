@@ -8,11 +8,10 @@ services:
       - SSE_LOCAL=${FIRECRAWL_SSE_LOCAL}
     restart: always
 
-  # proxy:
-  #   build: ./reverse-proxy
-  #   depends_on:
-  #     - mcp-fs
-  #     - mcp-git
-  #   ports:
-  #     - "8080:8080"       # 映射到 dind 容器的 8080（外层再映射到宿主机）
-  #   restart: unless-stopped
+  proxy:
+    build: ./nginx
+    depends_on:
+      - firecrawl-mcp
+    ports:
+      - "8080:8080"       # 映射到 dind 容器的 8080（外层再映射到宿主机）
+    restart: unless-stopped
