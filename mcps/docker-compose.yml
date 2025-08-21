@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   firecrawl-mcp:
     build: ./firecrawl
@@ -14,4 +12,4 @@ services:
       - firecrawl-mcp
     ports:
       - "8080:8080"       # 映射到 dind 容器的 8080（外层再映射到宿主机）
-    restart: unless-stopped
+    restart: always
