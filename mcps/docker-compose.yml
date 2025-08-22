@@ -5,11 +5,16 @@ services:
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
       - SSE_LOCAL=${FIRECRAWL_SSE_LOCAL}
     restart: always
+  
+  mcp-12306:
+    build: ./12306
+    restart: always
 
   proxy:
     build: ./nginx
     depends_on:
       - firecrawl-mcp
+      - mcp-12306
     ports:
       - "8080:8080"       # 映射到 dind 容器的 8080（外层再映射到宿主机）
     restart: always
