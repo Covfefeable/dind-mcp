@@ -1,178 +1,260 @@
-# DinD-MCP
+# DIND-MCP
 
-基于 Docker-in-Docker 的 MCP (Model Context Protocol) 服务器
+一个基于 Docker-in-Docker (DinD) 的 MCP (Model Context Protocol) 服务集成平台，支持多个 MCP 服务的统一部署和管理。
 
-## 项目简介
+## 项目概述
 
-本项目提供了一个完整的 Docker-in-Docker 环境，用于运行 MCP 服务器。通过容器化的方式，可以安全地在隔离环境中运行各种 MCP 服务，目前主要包含 Firecrawl MCP 服务用于网页爬取和内容提取。
+本项目提供了一个完整的容器化解决方案，用于部署和管理多个 MCP 服务。通过 Docker-in-Docker 技术，实现了服务的隔离和统一管理，并通过 Nginx 反向代理提供统一的访问入口。
 
-## 架构说明
+## 架构设计
+
+### 整体架构
 
 ```
-┌─────────────────────────────────────────┐
-│              宿主机                      │
-│  ┌─────────────────────────────────────┐ │
-│  │           DinD 容器                 │ │
-│  │  ┌─────────────┐  ┌─────────────┐   │ │
-│  │  │ Firecrawl   │  │   Nginx     │   │ │
-│  │  │    MCP      │  │   Proxy     │   │ │
-│  │  │             │  │             │   │ │
-│  │  └─────────────┘  └─────────────┘   │ │
-│  │         :3000           :8080       │ │
-│  └─────────────────────────────────────┘ │
-│                    :8080                 │
-└─────────────────────────────────────────┘
+宿主机:8080 → DinD容器:8080 → Nginx代理 → MCP服务
+                                    ├── firecrawl-mcp:3000
+                                    └── mcp-12306:3000
 ```
 
-### 服务组件
+### 组件说明
 
-- **DinD (Docker-in-Docker)**: 提供隔离的 Docker 运行环境
-- **Firecrawl MCP**: 网页爬取和内容提取服务
-- **Nginx 反向代理**: 提供统一的访问入口和负载均衡
-- **Init 服务**: 负责初始化和启动内部服务
+- **DinD 容器**: 提供 Docker 运行环境，支持在容器内运行其他容器
+- **Nginx 代理**: 统一入口，负责路由分发和负载均衡
+- **MCP 服务**: 具体的业务服务，目前支持 Firecrawl 和 12306 两个服务
+
+## 目录结构
+
+```
+dind-mcp/
+├── README.md                 # 项目说明文档
+├── docker-compose.yml        # 主容器编排文件
+└── mcps/                     # MCP 服务目录
+    ├── .env                  # 环境变量配置
+    ├── docker-compose.yml    # MCP 服务编排文件
+    ├── nginx/                # Nginx 代理配置
+    │   ├── Dockerfile
+    │   └── nginx.conf
+    ├── firecrawl/            # Firecrawl MCP 服务
+    │   └── Dockerfile
+    └── 12306/                # 12306 MCP 服务
+        └── Dockerfile
+```
 
 ## 快速开始
 
 ### 前置要求
 
-- Docker 20.10+
-- Docker Compose 2.0+
+- Docker
+- Docker Compose
 
-### 配置环境变量
+### 环境配置
 
-1. 编辑 `mcps/.env` 文件：
+1. 配置环境变量文件 `mcps/.env`：
 
 ```bash
-# 替换为你的 Firecrawl API 密钥
-FIRECRAWL_API_KEY=fc-your-actual-api-key-here
+# Firecrawl API 密钥
+FIRECRAWL_API_KEY=fc-YOUR-FIRECRAWL-API-KEY
+# 启用本地 SSE 支持
 FIRECRAWL_SSE_LOCAL=true
 ```
 
 ### 启动服务
 
+1. 克隆项目到本地
+2. 进入项目目录
+3. 启动服务：
+
 ```bash
-# 启动所有服务
 docker compose up -d
+```
 
-# 查看服务状态
-docker compose ps
+### 验证部署
 
-# 查看日志
+服务启动后，可以通过以下方式验证：
+
+```bash
+# 检查服务状态
+curl http://localhost:8080/_ok
+
+# 访问 Firecrawl 服务
+curl http://localhost:8080/firecrawl/sse
+
+# 访问 12306 服务
+curl http://localhost:8080/12306/sse
+```
+
+## 服务详情
+
+### 当前支持的 MCP 服务
+
+#### 1. Firecrawl MCP
+- **功能**: 网页抓取和内容提取服务
+- **端口**: 3000
+- **路由**: `/firecrawl/sse`
+- **环境变量**: 
+  - `FIRECRAWL_API_KEY`: Firecrawl API 密钥
+  - `FIRECRAWL_SSE_LOCAL`: 本地 SSE 支持
+
+#### 2. 12306 MCP
+- **功能**: 12306 相关服务接口
+- **端口**: 3000
+- **路由**: `/12306/sse`
+
+### 路由配置
+
+Nginx 代理配置了以下路由规则：
+
+- **路径路由**:
+  - `/firecrawl/` → `firecrawl-mcp:3000`
+  - `/12306/` → `mcp-12306:3000`
+
+- **智能路由**: 基于 Cookie 的服务类型识别
+  - Cookie `service-type=firecrawl` → Firecrawl 服务
+  - Cookie `service-type=12306` → 12306 服务
+
+- **通用端点**:
+  - `/messages` → 根据 Cookie 路由到对应服务
+  - `/message` → 根据 Cookie 路由到对应服务
+
+## 添加新的 MCP 服务
+
+本项目设计为可扩展架构，支持轻松添加新的 MCP 服务：
+
+### 步骤 1: 创建服务目录
+
+在 `mcps/` 目录下创建新服务目录，例如 `new-service/`：
+
+```bash
+mkdir mcps/new-service
+```
+
+### 步骤 2: 创建 Dockerfile
+
+在新服务目录中创建 `Dockerfile`：
+
+```dockerfile
+FROM node:22-alpine
+
+WORKDIR /app
+
+COPY . /app/
+
+RUN npm install -g your-mcp-package
+
+CMD ["npx", "-y", "your-mcp-package", "--port", "3000"]
+```
+
+### 步骤 3: 更新 Docker Compose
+
+在 `mcps/docker-compose.yml` 中添加新服务：
+
+```yaml
+services:
+  # ... 现有服务 ...
+  
+  new-service-mcp:
+    build: ./new-service
+    environment:
+      - YOUR_ENV_VAR=${YOUR_ENV_VAR}
+    restart: always
+
+  proxy:
+    # ... 现有配置 ...
+    depends_on:
+      - firecrawl-mcp
+      - mcp-12306
+      - new-service-mcp  # 添加依赖
+```
+
+### 步骤 4: 更新 Nginx 配置
+
+在 `mcps/nginx/nginx.conf` 中添加路由规则：
+
+```nginx
+# 添加到 map $http_cookie $service_type 块中
+"~*service-type=newservice" "newservice";
+
+# 添加到 map $service_type $backend_server 块中
+"newservice" "http://new-service-mcp:3000";
+
+# 添加新的 location 块
+location /newservice/ {
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection $connection_upgrade;
+  add_header Set-Cookie "service-type=newservice; Path=/" always;
+  proxy_pass http://new-service-mcp:3000/;
+}
+```
+
+### 步骤 5: 更新环境变量
+
+如需要，在 `mcps/.env` 中添加新的环境变量：
+
+```bash
+YOUR_ENV_VAR=your-value
+```
+
+## 技术特性
+
+### Docker-in-Docker (DinD)
+- 提供完全隔离的 Docker 环境
+- 支持动态容器管理
+- 使用镜像加速器提升构建速度
+
+### 健康检查
+- DinD 容器配置了健康检查机制
+- 确保 Docker 守护进程正常运行后再启动其他服务
+
+### 自动化部署
+- 通过 init 容器自动安装 Docker Compose
+- 自动构建和启动所有 MCP 服务
+
+### 反向代理
+- 统一访问入口
+- 支持 WebSocket 连接升级
+- 智能路由分发
+- 请求头透传
+
+## 故障排除
+
+### 常见问题
+
+1. **服务无法启动**
+   - 检查 Docker 是否正常运行
+   - 验证端口 8080 是否被占用
+   - 查看容器日志：`docker compose logs`
+
+2. **环境变量未生效**
+   - 确认 `.env` 文件格式正确
+   - 重新构建容器：`docker compose up -d --build`
+
+3. **代理路由错误**
+   - 检查 Nginx 配置语法
+   - 验证服务容器是否正常运行
+   - 查看 Nginx 日志
+
+### 日志查看
+
+```bash
+# 查看所有服务日志
+docker compose logs
+
+# 查看特定服务日志
+docker compose logs dind
+docker compose logs init
+
+# 实时跟踪日志
 docker compose logs -f
 ```
 
-### 访问服务
+## 贡献指南
 
-- **健康检查**: http://localhost:8080/_ok
-- **Firecrawl MCP**: http://localhost:8080/firecrawl/
+欢迎提交 Issue 和 Pull Request 来改进项目。在添加新的 MCP 服务时，请确保：
 
-## 服务配置
-
-### Firecrawl MCP 配置
-
-Firecrawl MCP 服务用于网页爬取和内容提取，支持以下功能：
-
-- 网页内容爬取
-- 结构化数据提取
-- 批量处理
-- SSE (Server-Sent Events) 支持
-
-### Nginx 代理配置
-
-Nginx 作为反向代理，提供：
-
-- 统一的访问入口 (端口 8080)
-- 路径路由 (`/firecrawl/` -> `firecrawl-mcp:3000`)
-- WebSocket 支持
-- 健康检查端点
-
-## 开发指南
-
-### 目录结构
-
-```
-dind-mcp/
-├── README.md                 # 项目文档
-├── docker-compose.yml        # 主要的 Docker Compose 配置
-└── mcps/                     # MCP 服务目录
-    ├── .env                  # 环境变量配置
-    ├── docker-compose.yml    # 内部服务配置
-    ├── firecrawl/           # Firecrawl MCP 服务
-    │   └── Dockerfile
-    └── nginx/               # Nginx 反向代理
-        ├── Dockerfile
-        └── nginx.conf
-```
-
-### 添加新的 MCP 服务
-
-1. 在 `mcps/` 目录下创建新的服务目录
-2. 编写 Dockerfile 和相关配置
-3. 在 `mcps/docker-compose.yml` 中添加服务定义
-4. 在 `nginx/nginx.conf` 中添加路由规则
-
-### 调试和故障排除
-
-```bash
-# 查看所有容器状态
-docker compose ps -a
-
-# 查看特定服务日志
-docker compose logs firecrawl-mcp
-docker compose logs nginx
-
-# 进入 DinD 容器调试
-docker compose exec dind sh
-
-# 重启服务
-docker compose restart [service-name]
-```
-
-## 安全注意事项
-
-⚠️ **重要安全提醒**：
-
-1. **特权模式**: DinD 服务运行在特权模式下，请确保在受信任的环境中使用
-2. **TLS 加密**: 当前配置禁用了 Docker TLS 加密，生产环境建议启用
-3. **API 密钥**: 请妥善保管 Firecrawl API 密钥，不要提交到版本控制系统
-4. **网络访问**: 默认暴露 8080 端口，请根据需要调整防火墙规则
-
-## 常见问题
-
-### Q: 服务启动失败怎么办？
-
-A: 检查以下几点：
-- Docker 服务是否正常运行
-- 端口 8080 是否被占用
-- `.env` 文件中的 API 密钥是否正确
-- 查看容器日志获取详细错误信息
-
-### Q: 如何更新服务？
-
-A: 执行以下命令：
-```bash
-docker compose down
-docker compose pull
-docker compose up -d --build
-```
-
-### Q: 如何备份数据？
-
-A: Docker 数据存储在 `dind-data` 卷中：
-```bash
-docker run --rm -v dind-data:/data -v $(pwd):/backup alpine tar czf /backup/dind-backup.tar.gz -C /data .
-```
-
-## 许可证
-
-本项目采用 MIT 许可证，详见 LICENSE 文件。
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request 来改进本项目。
-
-## 更新日志
-
-- **v1.0.0**: 初始版本，支持 Firecrawl MCP 服务
-- 添加 Nginx 反向代理支持
-- 完善文档和配置说明
+1. 遵循现有的目录结构和命名规范
+2. 更新相关的配置文件
+3. 提供清晰的文档说明
+4. 测试服务的正常运行
